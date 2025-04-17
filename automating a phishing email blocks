@@ -1,0 +1,72 @@
+import base64
+import re
+from googleapiclient.discovery import build
+from google.oauth2 import service_account
+
+# Service account credentials file path
+SERVICE_ACCOUNT_FILE = 'path/to/credentials.json'
+SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+
+def authenticate_gmail_api():
+    """Authenticate and build the Gmail API service."""
+    creds = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    service = build('gmail', 'v1', credentials=creds)
+    return service
+
+def get_emails(service, user_id='me'):
+    """Retrieve emails from the user's inbox."""
+    results = service.users().messages().list(userId=user_id).execute()
+    messages = results.get('messages', [])
+    return messages
+
+def get_email_details(service, user_id, message_id):
+    """Get details of a specific email."""
+    message = service.users().messages().get(userId=user_id, id=message_id).execute()
+    payload = message.get('payload', {})
+    headers = payload.get('headers', [])
+    
+    email_data = {
+        'ip_address': None,
+        'subject': None,
+        'from': None,
+    }
+
+    for header in headers:
+        if header['name'] == 'Received':
+            # Extract IP Address from Received header
+            match = re.search(r'\[(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\]', header['value'])
+            if match:
+                email_data['ip_address'] = match.group(1)
+        elif header['name'] == 'Subject':
+            email_data['subject'] = header['value']
+        elif header['name'] == 'From':
+            email_data['from'] = header['value']
+
+    return email_data
+
+def flag_ip_address(ip_address):
+    """Signal or block the IP address (e.g., using a firewall or third-party service)."""
+    print(f"Flagging IP address: {ip_address}")
+    # Implement your IP blocking logic here (e.g., update a firewall rule)
+    # Example: Make an API call to a firewall management system.
+
+def main():
+    # Authenticate and initialize Gmail API
+    service = authenticate_gmail_api()
+    
+    # Get list of emails
+    messages = get_emails(service)
+    
+    for message in messages:
+        message_id = message['id']
+        email_data = get_email_details(service, 'me', message_id)
+        
+        # Identify phishing emails (add your logic here)
+        if 'phishing' in (email_data['subject'] or '').lower():
+            print(f"Phishing email detected: {email_data}")
+            if email_data['ip_address']:
+                flag_ip_address(email_data['ip_address'])
+
+if __name__ == '__main__':
+    main()
